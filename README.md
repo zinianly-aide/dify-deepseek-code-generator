@@ -9,6 +9,8 @@
 - 自动解析DeepSeek回复中的代码块，创建对应的文件和目录结构
 - 支持多种代码格式和项目类型
 - 提供完整的示例代码，易于上手
+- 命令行界面支持，方便在终端中直接使用
+- 支持外部模板文件，便于管理和重用模板
 
 ## 快速开始
 
@@ -87,6 +89,74 @@ await generator.generateCode(question, template, outputDir);
 #### createFilesFromContent
 
 解析回复内容中的代码块，并创建对应的文件和目录。
+
+## 命令行工具使用
+
+本项目提供了一个命令行工具，使您可以直接在终端中输入想要实现的代码逻辑，并生成相应的代码文件。
+
+### 安装命令行工具
+
+首先，确保您已安装项目依赖：
+
+```bash
+npm install
+```
+
+然后，将项目链接到全局，以便可以在任何地方使用命令行工具：
+
+```bash
+npm link
+```
+
+### 基本用法
+
+安装完成后，您可以直接在终端中使用`dify-codegen`命令：
+
+```bash
+dify-codegen
+```
+
+启动后，您可以直接输入想要实现的代码逻辑，按Enter键生成代码。
+
+### 命令行选项
+
+```bash
+dify-codegen [选项]
+```
+
+可用选项：
+
+- `-o, --output <目录>`: 指定输出目录（默认: ./output_cli）
+- `-s, --streaming`: 使用流式响应模式
+- `-t, --template <文件>`: 指定模板文件路径
+- `-h, --help`: 显示帮助信息
+
+### 使用示例
+
+**基本使用**：
+```bash
+dify-codegen
+> 请帮我写一个简单的Node.js函数，用于计算两个数字的和
+```
+
+**指定输出目录**：
+```bash
+dify-codegen --output ./my_project
+```
+
+**使用流式响应模式**：
+```bash
+dify-codegen --streaming
+```
+
+**使用外部模板文件**：
+```bash
+dify-codegen --template ./templates/my_template.txt
+```
+
+### 退出命令行工具
+
+输入`exit`或按`Ctrl+C`可以退出命令行工具。
 
 ## 自定义使用
 

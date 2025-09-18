@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "使用Dify DeepSeek模型生成代码并自动创建文件结构的工具",
   "main": "index.js",
+  "bin": {
+    "dify-codegen": "./cli.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
