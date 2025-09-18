@@ -1,0 +1,8 @@
+请帮我生成一个springboot项目
+请按照以下格式返回代码：
+```javascript
+// 文件名: example.js
+// 这里是JavaScript代码
+```
+
+请确保在代码块前添加正确的文件名注释。

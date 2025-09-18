@@ -29,6 +29,33 @@ class DifyDeepSeekCodeGenerator {
     }
 
     /**
+     * 从外部文件加载模板
+     * @param {string} templatePath - 模板文件的路径
+     * @returns {string} 模板内容
+     */
+    loadTemplateFromFile(templatePath) {
+        if (!templatePath) {
+            return '';
+        }
+        
+        try {
+            // 确保路径是绝对路径或相对于当前工作目录
+            const absolutePath = path.isAbsolute(templatePath) 
+                ? templatePath 
+                : path.join(process.cwd(), templatePath);
+            
+            if (!fs.existsSync(absolutePath)) {
+                throw new Error(`模板文件不存在: ${templatePath}`);
+            }
+            
+            return fs.readFileSync(absolutePath, 'utf8');
+        } catch (error) {
+            console.error('加载模板文件失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * 发送请求到Dify的Chat API
      * @param {Object} requestBody - 请求体
      * @param {Function} onStreamChunk - 流式响应的回调函数（可选）
@@ -242,11 +269,21 @@ class DifyDeepSeekCodeGenerator {
      * @param {Array} files - 文件列表（可选）
      * @param {string} responseMode - 响应模式：'blocking'或'streaming'（可选，默认'blocking'）
      * @param {Function} onStreamChunk - 流式响应的回调函数（可选）
+     * @param {string} templateFilePath - 模板文件路径（可选，如果提供，将覆盖template参数）
      */
-    async generateCode(question, template = '', outputDir = './output', conversationId = '', files = [], responseMode = 'blocking', onStreamChunk = null) {
+    async generateCode(question, template = '', outputDir = './output', conversationId = '', files = [], responseMode = 'blocking', onStreamChunk = null, templateFilePath = '') {
         try {
             console.log('正在准备请求...');
-            const requestBody = this.buildRequestBody(question, template, conversationId, files, responseMode);
+            
+            // 如果提供了模板文件路径，从文件加载模板
+            let finalTemplate = template;
+            if (templateFilePath) {
+                console.log(`正在从文件加载模板: ${templateFilePath}`);
+                finalTemplate = this.loadTemplateFromFile(templateFilePath);
+                console.log('从文件加载的模板:', finalTemplate);
+            }
+            
+            const requestBody = this.buildRequestBody(question, finalTemplate, conversationId, files, responseMode);
             
             console.log('正在发送请求到Dify DeepSeek模型...');
             const response = await this.sendRequest(requestBody, onStreamChunk);
@@ -289,6 +326,15 @@ if (require.main === module) {
         // 示例问题和代码模板
         const codeTemplate = '请按照以下格式返回代码：\n```javascript\n// 文件名: example.js\n// 这里是JavaScript代码\n```\n\n请确保在代码块前添加正确的文件名注释。';
         
+        // 创建一个示例模板文件
+        const templateFilePath = './templates/code_template.txt';
+        const templateDir = path.dirname(templateFilePath);
+        if (!fs.existsSync(templateDir)) {
+            fs.mkdirSync(templateDir, { recursive: true });
+        }
+        // fs.writeFileSync(templateFilePath, codeTemplate);
+        console.log(`已创建示例模板文件: ${templateFilePath}`);
+        
         const question = '请帮我写一个简单的Node.js函数，用于计算斐波那契数列的第n项';
         
         // 示例文件数组（按照用户提供的格式）
@@ -301,27 +347,39 @@ if (require.main === module) {
         ];
         
         try {
-            console.log('示例1：使用阻塞式响应模式');
-            await generator.generateCode(question, codeTemplate, './output_blocking', '', files);
+            // console.log('示例1：使用阻塞式响应模式');
+            // await generator.generateCode(question, codeTemplate, './output_blocking', '', files);
             
-            console.log('\n示例2：使用流式响应模式');
-            // 定义流式响应回调函数
-            const streamCallback = (chunk, isComplete) => {
-                if (isComplete) {
-                    console.log('\n流式响应已完成');
-                } else {
-                    process.stdout.write(chunk); // 实时输出流数据
-                }
-            };
+            // console.log('\n示例2：使用流式响应模式');
+            // // 定义流式响应回调函数
+            // const streamCallback = (chunk, isComplete) => {
+            //     if (isComplete) {
+            //         console.log('\n流式响应已完成');
+            //     } else {
+            //         process.stdout.write(chunk); // 实时输出流数据
+            //     }
+            // };
             
+            // await generator.generateCode(
+            //     question,
+            //     codeTemplate,
+            //     './output_streaming',
+            //     '',
+            //     files,
+            //     'streaming',
+            //     streamCallback
+            // );
+            
+            console.log('\n示例3：使用外部模板文件');
             await generator.generateCode(
                 question,
-                codeTemplate,
-                './output_streaming',
+                '', // 这个参数将被templateFilePath覆盖
+                './output_template_file',
                 '',
                 files,
-                'streaming',
-                streamCallback
+                'blocking',
+                null,
+                templateFilePath // 使用外部模板文件
             );
         } catch (error) {
             console.error('示例执行失败:', error);
