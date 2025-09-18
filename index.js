@@ -192,6 +192,7 @@ class DifyDeepSeekCodeGenerator {
         let currentFilePath = '';
         let currentContent = [];
         let hasFiles = false;
+        let codeBlockIndex = 0;
 
         // 逐行解析内容
         for (let i = 0; i < lines.length; i++) {
@@ -219,6 +220,7 @@ class DifyDeepSeekCodeGenerator {
                     currentLanguage = '';
                     currentFilePath = '';
                     currentContent = [];
+                    codeBlockIndex++;
                 } else {
                     // 代码块开始
                     inCodeBlock = true;
@@ -243,7 +245,7 @@ class DifyDeepSeekCodeGenerator {
                 codeBlocks.forEach((block, index) => {
                     let language = block.match(/```([\w]+)/)?.[1] || 'txt';
                     let content = block.replace(/```[\w]*\s*|```/g, '').trim();
-                    let fileName = 'code_' + (index + 1) + '.' + language;
+                    let fileName = this.generateSmartFileName(content, index, language);
                     let fullPath = path.join(outputDir, fileName);
                     
                     fs.writeFileSync(fullPath, content);
@@ -258,6 +260,56 @@ class DifyDeepSeekCodeGenerator {
             fs.writeFileSync(fullPath, content);
             console.log('已创建文件: ' + fullPath);
         }
+    }
+
+    /**
+     * 根据代码内容智能生成文件名
+     * @param {string} content - 代码内容
+     * @param {number} index - 代码块索引
+     * @param {string} language - 代码语言
+     * @returns {string} 生成的文件名
+     */
+    generateSmartFileName(content, index, language) {
+        const lines = content.split('\n');
+        
+        // React组件识别
+        if (language === 'javascript' || language === 'jsx') {
+            // 检查是否有App组件
+            if (content.includes('function App') || content.includes('const App =')) {
+                return 'App.js';
+            }
+            // 检查是否有ReactDOM.render或createRoot
+            if (content.includes('ReactDOM.createRoot') || content.includes('ReactDOM.render')) {
+                return 'index.js';
+            }
+            // 检查是否有export default
+            const defaultExport = lines.find(line => line.includes('export default'));
+            if (defaultExport) {
+                const match = defaultExport.match(/export default\s+(\w+)/);
+                if (match && match[1]) {
+                    return match[1] + '.js';
+                }
+            }
+        }
+        
+        // Bash脚本识别
+        if (language === 'bash') {
+            // 检查是否有特定的命令
+            if (content.includes('npm start') && content.includes('create-react-app')) {
+                return 'start_react.sh';
+            }
+            return 'script.sh';
+        }
+        
+        // HTML文件识别
+        if (language === 'html') {
+            if (content.includes('<html') || content.includes('<body')) {
+                return 'index.html';
+            }
+        }
+        
+        // 其他情况使用默认命名
+        return 'code_' + (index + 1) + '.' + language;
     }
 
     /**
