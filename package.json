@@ -1,0 +1,18 @@
+{
+  "name": "gen_code",
+  "version": "1.0.0",
+  "description": "使用Dify DeepSeek模型生成代码并自动创建文件结构的工具",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "example": "node example.js"
+  },
+  "keywords": ["dify", "deepseek", "code-generation", "nodejs"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
