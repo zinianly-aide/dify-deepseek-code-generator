@@ -175,6 +175,63 @@ class DifyDeepSeekCodeGenerator {
     }
 
     /**
+     * 检测DeepSeek响应中的特定标记命令
+     * @param {string} content - DeepSeek的回复内容
+     * @returns {Array} 检测到的命令列表
+     */
+    detectMCPCmds(content) {
+        const cmdPattern = /\[MCP\]\s*\(([^)]+)\)/g;
+        const cmds = [];
+        let match;
+        
+        while ((match = cmdPattern.exec(content)) !== null) {
+            cmds.push(match[1].trim());
+        }
+        
+        return cmds;
+    }
+
+    /**
+     * 处理MCP命令
+     * @param {string} cmd - MCP命令
+     * @returns {Promise<Object>} 命令执行结果
+     */
+    async handleMCPCommand(cmd) {
+        try {
+            console.log(`检测到MCP命令: ${cmd}`);
+            
+            // 解析命令格式: server_name:tool_name?param1=value1&param2=value2
+            const [serverToolPart, paramsPart] = cmd.split('?');
+            const [serverName, toolName] = serverToolPart.split(':');
+            
+            // 解析参数
+            const params = {};
+            if (paramsPart) {
+                paramsPart.split('&').forEach(param => {
+                    const [key, value] = param.split('=');
+                    params[key] = decodeURIComponent(value);
+                });
+            }
+            
+            // 在实际环境中，这里会调用真实的MCP服务
+            // 由于我们在模拟环境中，返回模拟结果
+            return {
+                success: true,
+                server: serverName,
+                tool: toolName,
+                params: params,
+                message: `MCP命令 ${serverName}:${toolName} 模拟执行成功`
+            };
+        } catch (error) {
+            console.error('处理MCP命令失败:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
      * 解析代码块并创建文件
      * @param {string} content - 包含代码块的内容
      * @param {string} outputDir - 输出目录
@@ -344,6 +401,20 @@ class DifyDeepSeekCodeGenerator {
             const dsResponse = this.extractDeepSeekResponse(response);
             
             console.log('\nDeepSeek回复:\n' + dsResponse + '\n');
+            
+            // 检查是否包含MCP命令
+            const mcpCmds = this.detectMCPCmds(dsResponse);
+            if (mcpCmds.length > 0) {
+                console.log(`检测到 ${mcpCmds.length} 个MCP命令，正在执行...`);
+                for (const cmd of mcpCmds) {
+                    const result = await this.handleMCPCommand(cmd);
+                    if (result.success) {
+                        console.log(`命令执行成功: ${result.message}`);
+                    } else {
+                        console.error(`命令执行失败: ${result.error}`);
+                    }
+                }
+            }
             
             console.log('正在根据回复创建文件...');
             await this.createFilesFromContent(dsResponse, outputDir);
