@@ -1,4 +1,4 @@
-请帮我生成一个springboot项目
+请帮我生成一个查询今天迟到人数的sql
 请按照以下格式返回代码：
 ```javascript
 // 文件名: example.js

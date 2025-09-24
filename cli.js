@@ -134,6 +134,10 @@ async function main() {
                 console.log(`MySQL MCP注册提示: ${result.error}`);
                 console.log('您仍然可以使用[MCP](mysql:connect?...)命令在会话中连接数据库。');
             }
+        } catch (error) {
+            console.log(`MySQL MCP注册提示: ${error.message}`);
+            console.log('您仍然可以使用[MCP](mysql:connect?...)命令在会话中连接数据库。');
+        }
         
         rl.prompt();
         
