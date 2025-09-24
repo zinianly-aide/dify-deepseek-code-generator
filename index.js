@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+const { mysqlMCP } = require('./mysql_mcp');
+
 class DifyDeepSeekCodeGenerator {
     constructor(apiKey, baseUrl = 'http://localhost/v1') {
         this.apiKey = apiKey;
@@ -180,7 +182,8 @@ class DifyDeepSeekCodeGenerator {
      * @returns {Array} 检测到的命令列表
      */
     detectMCPCmds(content) {
-        const cmdPattern = /\[MCP\]\s*\(([^)]+)\)/g;
+        // 修复正则表达式以确保正确捕获完整的MCP命令
+        const cmdPattern = /\[MCP\]\s*\((.+?)\)/g;
         const cmds = [];
         let match;
         
@@ -213,21 +216,103 @@ class DifyDeepSeekCodeGenerator {
                 });
             }
             
+            // 处理MySQL相关命令
+            if (serverName === 'mysql') {
+                const result = await this.handleMySQLCommand(toolName, params);
+                return result;
+            }
+            
             // 在实际环境中，这里会调用真实的MCP服务
             // 由于我们在模拟环境中，返回模拟结果
-            return {
-                success: true,
-                server: serverName,
-                tool: toolName,
-                params: params,
-                message: `MCP命令 ${serverName}:${toolName} 模拟执行成功`
-            };
+            return `MCP命令 ${serverName}:${toolName} 模拟执行成功`;
         } catch (error) {
             console.error('处理MCP命令失败:', error);
-            return {
-                success: false,
-                error: error.message
-            };
+            return `MCP命令执行失败: ${error.message}`;
+        }
+    }
+
+    /**
+     * 处理MySQL相关的MCP命令
+     * @param {string} toolName - 工具名称
+     * @param {Object} params - 参数对象
+     * @returns {Promise<Object>} - 命令执行结果
+     */
+    async handleMySQLCommand(toolName, params) {
+        try {
+            switch (toolName) {
+                case 'connect':
+                    // 连接到MySQL数据库
+                    const connectionResult = await mysqlMCP.connect({
+                        host: params.host || 'localhost',
+                        port: params.port ? parseInt(params.port) : 3306,
+                        user: params.user || 'user',
+                        password: params.password || 'userpassword',
+                        database: params.database || 'testdb'
+                    });
+                    return connectionResult.success 
+                        ? connectionResult.message 
+                        : `MySQL连接失败: ${connectionResult.error}`;
+                        
+                case 'get_tables':
+                    // 获取数据库中的所有表
+                    const tablesResult = await mysqlMCP.getTables();
+                    if (!tablesResult.success) {
+                        return `获取表列表失败: ${tablesResult.error}`;
+                    }
+                    return `数据库表列表: ${tablesResult.tables.join(', ')}`;
+                    
+                case 'describe_table':
+                    // 获取表结构
+                    if (!params.table) {
+                        return '参数错误: 缺少表名(table)';
+                    }
+                    const tableResult = await mysqlMCP.getTableStructure(params.table);
+                    if (!tableResult.success) {
+                        return `获取表结构失败: ${tableResult.error}`;
+                    }
+                    // 格式化表结构输出
+                    let structureOutput = `表结构: ${tableResult.tableName}\n`;
+                    structureOutput += '列名 | 类型 | 是否为空 | 键\n';
+                    structureOutput += '-----|-----|----------|-----\n';
+                    tableResult.structure.columns.forEach(col => {
+                        structureOutput += `${col.name} | ${col.type} | ${col.null ? '是' : '否'} | ${col.key || '-'}\n`;
+                    });
+                    return structureOutput;
+                    
+                case 'generate_description':
+                    // 生成表结构描述（用于大模型）
+                    if (!params.tables) {
+                        return '参数错误: 缺少表名(tables)，多个表用逗号分隔';
+                    }
+                    const tableNames = params.tables.split(',').map(t => t.trim());
+                    const descriptionResult = await mysqlMCP.generateTableDescription(tableNames);
+                    if (!descriptionResult.success) {
+                        return `生成表结构描述失败: ${descriptionResult.error}`;
+                    }
+                    return descriptionResult.description;
+                    
+                case 'execute_query':
+                    // 执行SQL查询
+                    if (!params.sql) {
+                        return '参数错误: 缺少SQL查询语句(sql)';
+                    }
+                    const queryResult = await mysqlMCP.executeQuery(params.sql);
+                    if (!queryResult.success) {
+                        return `执行查询失败: ${queryResult.error}`;
+                    }
+                    return `查询成功，返回 ${queryResult.rowCount} 条记录`;
+                    
+                case 'disconnect':
+                    // 断开连接
+                    await mysqlMCP.disconnect();
+                    return '已断开MySQL连接';
+                    
+                default:
+                    return `未知的MySQL工具: ${toolName}`;
+            }
+        } catch (error) {
+            console.error('MySQL命令执行失败:', error);
+            return `MySQL命令执行失败: ${error.message}`;
         }
     }
 
