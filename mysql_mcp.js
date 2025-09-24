@@ -3,6 +3,7 @@ const mysql = require('mysql2/promise');
 class MySQLMCP {
   constructor() {
     this.connection = null;
+    this.description = 'MySQL数据库操作客户端';
   }
 
   /**
@@ -147,6 +148,72 @@ class MySQLMCP {
         error: error.message
       };
     }
+  }
+
+  /**
+   * 执行命令
+   * @param {string} command - 命令名称
+   * @param {Object} params - 命令参数
+   * @returns {Promise<Object>} 命令执行结果
+   */
+  async execute(command, params = {}) {
+    switch (command) {
+      case 'connect':
+        return await this.connect(params);
+      case 'disconnect':
+        return await this.disconnect();
+      case 'get_tables':
+        return await this.getTables();
+      case 'get_table_structure':
+        return await this.getTableStructure(params.tableName);
+      case 'get_capabilities':
+        return this.getCapabilities();
+      default:
+        throw new Error(`不支持的命令: ${command}`);
+    }
+  }
+
+  /**
+   * 获取MCP客户端的能力声明
+   * @returns {Object} 能力声明
+   */
+  getCapabilities() {
+    return {
+      success: true,
+      description: 'MySQL数据库操作客户端，支持数据库连接、表列表查询和表结构查询等功能',
+      methods: [
+        {
+          name: 'connect',
+          description: '连接到MySQL数据库',
+          params: {
+            host: '数据库主机地址',
+            port: '数据库端口',
+            user: '数据库用户名',
+            password: '数据库密码',
+            database: '数据库名称'
+          }
+        },
+        {
+          name: 'disconnect',
+          description: '断开与MySQL数据库的连接'
+        },
+        {
+          name: 'get_tables',
+          description: '获取数据库中的表列表'
+        },
+        {
+          name: 'get_table_structure',
+          description: '获取指定表的结构信息',
+          params: {
+            tableName: '表名称'
+          }
+        },
+        {
+          name: 'get_capabilities',
+          description: '获取MCP客户端的能力声明'
+        }
+      ]
+    };
   }
 
   /**

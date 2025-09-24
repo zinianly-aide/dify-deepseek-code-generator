@@ -2,12 +2,38 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+// 引入mysql_mcp模块
 const { mysqlMCP } = require('./mysql_mcp');
+// 引入mcp_registry模块
+const { mcpRegistry, JSONRPCParser } = require('./mcp_registry');
+// 引入mcp_trigger_rules模块
+const { mcpTriggerRules } = require('./mcp_trigger_rules');
+// 引入mcp_capability_templates模块
+const { mcpCapabilityTemplates } = require('./mcp_capability_templates');
 
 class DifyDeepSeekCodeGenerator {
     constructor(apiKey, baseUrl = 'http://localhost/v1') {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
+        
+        // 监听MCP注册事件
+        mcpRegistry.on('mcp.registered', (data) => {
+            console.log(`MCP服务 ${data.name} 已注册，正在更新能力描述模板`);
+            // 这里可以添加逻辑来动态更新MCP能力描述模板
+            // 例如：如果是新的MCP服务，可以自动添加其能力描述到模板中
+            if (data.metadata && data.metadata.capabilityTemplate) {
+                mcpCapabilityTemplates.setTemplate(data.name, data.metadata.capabilityTemplate);
+                console.log(`成功更新MCP服务 ${data.name} 的能力描述模板`);
+            }
+        });
+        
+        // 监听MCP注销事件
+        mcpRegistry.on('mcp.unregistered', (data) => {
+            console.log(`MCP服务 ${data.name} 已注销，正在更新能力描述模板`);
+            // 这里可以添加逻辑来动态更新MCP能力描述模板
+            // 例如：从模板中移除已注销的MCP服务描述
+            // 注意：在实际生产环境中，可能需要更复杂的策略来处理模板更新
+        });
     }
 
     /**
@@ -20,9 +46,15 @@ class DifyDeepSeekCodeGenerator {
      * @returns {Object} 请求体
      */
     buildRequestBody(question, template = '', conversationId = '', files = [], responseMode = 'blocking') {
+        // 获取详细的MCP服务能力描述信息，用于动态更新系统提示词
+        const mcpServicesDescription = mcpCapabilityTemplates.generateSystemPromptFragment();
+        
+        // 将MCP服务描述信息添加到查询前，确保模型了解可用的MCP服务
+        const enhancedQuery = mcpServicesDescription + '\n\n' + (template ? template + '\n\n' + question : question);
+        
         return {
             inputs: {},
-            query: template ? template + '\n\n' + question : question,
+            query: enhancedQuery,
             response_mode: responseMode,
             conversation_id: conversationId,
             user: 'nodejs-client',
@@ -196,38 +228,48 @@ class DifyDeepSeekCodeGenerator {
 
     /**
      * 处理MCP命令
-     * @param {string} cmd - MCP命令
+     * 支持两种格式:
+     * 1. 传统格式: server_name:tool_name?param1=value1&param2=value2
+     * 2. JSON-RPC 2.0格式: {"jsonrpc":"2.0","method":"server_name:tool_name","params":{...},"id":1}
+     * @param {string|Object} cmd - MCP命令或JSON-RPC请求对象
      * @returns {Promise<Object>} 命令执行结果
      */
     async handleMCPCommand(cmd) {
         try {
-            console.log(`检测到MCP命令: ${cmd}`);
+            console.log(`检测到MCP命令: ${typeof cmd === 'string' ? cmd : JSON.stringify(cmd)}`);
             
-            // 解析命令格式: server_name:tool_name?param1=value1&param2=value2
-            const [serverToolPart, paramsPart] = cmd.split('?');
-            const [serverName, toolName] = serverToolPart.split(':');
-            
-            // 解析参数
-            const params = {};
-            if (paramsPart) {
-                paramsPart.split('&').forEach(param => {
-                    const [key, value] = param.split('=');
-                    params[key] = decodeURIComponent(value);
-                });
+            // 检查是否为JSON-RPC格式请求
+            if (typeof cmd === 'object' && cmd.jsonrpc === '2.0' && cmd.method) {
+                return await mcpRegistry.executeJSONRPC(cmd);
             }
             
-            // 处理MySQL相关命令
-            if (serverName === 'mysql') {
-                const result = await this.handleMySQLCommand(toolName, params);
+            // 传统格式命令处理
+            if (typeof cmd === 'string') {
+                // 解析命令格式: server_name:tool_name?param1=value1&param2=value2
+                const [serverToolPart, paramsPart] = cmd.split('?');
+                const [serverName, toolName] = serverToolPart.split(':');
+                
+                // 解析参数
+                const params = {};
+                if (paramsPart) {
+                    paramsPart.split('&').forEach(param => {
+                        const [key, value] = param.split('=');
+                        params[key] = decodeURIComponent(value);
+                    });
+                }
+                
+                // 使用MCP注册表执行命令
+                const result = await mcpRegistry.executeCommand(serverName, toolName, params);
                 return result;
             }
             
-            // 在实际环境中，这里会调用真实的MCP服务
-            // 由于我们在模拟环境中，返回模拟结果
-            return `MCP命令 ${serverName}:${toolName} 模拟执行成功`;
+            throw new Error('无效的MCP命令格式');
         } catch (error) {
             console.error('处理MCP命令失败:', error);
-            return `MCP命令执行失败: ${error.message}`;
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -477,7 +519,34 @@ class DifyDeepSeekCodeGenerator {
                 console.log('从文件加载的模板:', finalTemplate);
             }
             
-            const requestBody = this.buildRequestBody(question, finalTemplate, conversationId, files, responseMode);
+            // 自动触发规则1: 分析用户请求是否需要MCP服务支持
+            const mcpTriggerInfo = mcpTriggerRules.analyzeRequest(question);
+            let mcpResults = {};
+            
+            if (mcpTriggerInfo) {
+                console.log(`自动触发MCP调用: ${mcpTriggerInfo.serverName}:${mcpTriggerInfo.toolName}`);
+                // 执行MCP调用
+                const result = await this.handleMCPCommand(`${mcpTriggerInfo.serverName}:${mcpTriggerInfo.toolName}?${this._formatParamsForCommand(mcpTriggerInfo.params)}`);
+                
+                if (result.success) {
+                    console.log(`MCP调用成功: ${result.message}`);
+                    // 保存MCP调用结果，用于增强后续查询
+                    mcpResults[`${mcpTriggerInfo.serverName}:${mcpTriggerInfo.toolName}`] = result.message;
+                } else {
+                    console.error(`MCP调用失败: ${result.error}`);
+                }
+            }
+            
+            // 构建请求体，并将MCP调用结果添加到查询中
+            let enhancedQuestion = question;
+            if (Object.keys(mcpResults).length > 0) {
+                enhancedQuestion += '\n\n已获取的相关信息:\n';
+                for (const [cmd, result] of Object.entries(mcpResults)) {
+                    enhancedQuestion += `- ${cmd}: ${result}\n`;
+                }
+            }
+            
+            const requestBody = this.buildRequestBody(enhancedQuestion, finalTemplate, conversationId, files, responseMode);
             
             console.log('正在发送请求到Dify DeepSeek模型...');
             const response = await this.sendRequest(requestBody, onStreamChunk);
@@ -487,7 +556,25 @@ class DifyDeepSeekCodeGenerator {
             
             console.log('\nDeepSeek回复:\n' + dsResponse + '\n');
             
-            // 检查是否包含MCP命令
+            // 自动触发规则2: 检查模型回复中是否有低置信度的暗示
+            // 这里简化实现，实际应用中可能需要更复杂的NLP分析
+            if (dsResponse.includes('可能') || dsResponse.includes('不确定') || dsResponse.includes('大概') || dsResponse.includes('大约')) {
+                console.log('检测到模型回复中包含不确定的表述，尝试通过MCP获取更准确的信息');
+                // 再次分析用户请求，以获取更准确的MCP调用信息
+                const lowConfidenceTriggerInfo = mcpTriggerRules.analyzeRequest(question, 0.5); // 假设置信度为0.5
+                if (lowConfidenceTriggerInfo) {
+                    console.log(`低置信度触发MCP调用: ${lowConfidenceTriggerInfo.serverName}:${lowConfidenceTriggerInfo.toolName}`);
+                    const result = await this.handleMCPCommand(`${lowConfidenceTriggerInfo.serverName}:${lowConfidenceTriggerInfo.toolName}?${this._formatParamsForCommand(lowConfidenceTriggerInfo.params)}`);
+                    if (result.success) {
+                        console.log(`低置信度MCP调用成功，结果将用于优化回答`);
+                        // 这里可以选择重新生成回答，或者直接使用MCP结果来增强当前回答
+                        // 简化实现：在返回结果中添加MCP获取的额外信息
+                        return dsResponse + '\n\n[额外信息（来自MCP服务）]:\n' + result.message;
+                    }
+                }
+            }
+            
+            // 检查是否包含手动触发的MCP命令
             const mcpCmds = this.detectMCPCmds(dsResponse);
             if (mcpCmds.length > 0) {
                 console.log(`检测到 ${mcpCmds.length} 个MCP命令，正在执行...`);
@@ -510,6 +597,18 @@ class DifyDeepSeekCodeGenerator {
             console.error('代码生成失败:', error.message);
             throw error;
         }
+    }
+    
+    /**
+     * 将参数对象格式化为命令行参数字符串
+     * @param {Object} params - 参数对象
+     * @returns {string} 格式化后的参数字符串
+     * @private
+     */
+    _formatParamsForCommand(params) {
+        return Object.entries(params)
+            .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+            .join('&');
     }
 }
 
